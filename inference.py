@@ -55,6 +55,50 @@ def init_models(args):
 def main(args):
     app, G, netArc, handler, model = init_models(args)
     
+    if args.implicit_deepfake:
+        print("Entered the custom usage for ImplicitDeepfake method")
+        dirs_dict = {'train': args.train_size, 'val': args.val_size, 'test': args.test_size}
+        crop_size = args.crop_size
+
+        try:
+            celebrity_image = cv2.imread(args.celebrity)
+            celebrity = crop_face(celebrity_image, app, crop_size)[0]
+            celebrity = [celebrity[:, :, ::-1]]
+            print("Everything is ok!")
+        except TypeError:
+            print("Bad source images")
+
+        if not os.path.exists(args.save_path):
+            os.makedirs(args.save_path)
+
+        for dir, max_iter in dirs_dict.items():
+            dir_to_save = os.path.join(args.save_path, dir)
+
+            if not os.path.exists(dir_to_save):
+                os.makedirs(dir_to_save)
+
+            for i in range(max_iter):
+                target_path = os.path.join(args.dataset_path, dir, f'r_{i}.png')
+                target_full = cv2.imread(target_path)
+                full_frames = [target_full]
+                target = get_target(full_frames, app, crop_size)
+                START_TIME = time.time()
+
+                final_frames_list, crop_frames_list, full_frames, tfm_array_list = model_inference(full_frames,
+                                                                                                    celebrity,
+                                                                                                    target,
+                                                                                                    netArc,
+                                                                                                    G,
+                                                                                                    app,
+                                                                                                    set_target = False,
+                                                                                                    crop_size=crop_size,
+                                                                                                    BS=args.batch_size)
+
+                result = get_final_image(final_frames_list, crop_frames_list, full_frames[0], tfm_array_list, handler)
+                cv2.imwrite(os.path.join(dir_to_save, f'r_{i}.png'), result)
+
+        return
+
     # get crops from source images
     print('List of source paths: ',args.source_paths)
     source = []
@@ -149,5 +193,14 @@ if __name__ == "__main__":
     parser.add_argument('--target_image', default='examples/images/beckham.jpg', type=str, help="It's necessary for image to image swap")
     parser.add_argument('--out_image_name', default='examples/results/result.png', type=str,help="It's necessary for image to image swap")
     
+    # parameters for ImplicitDeepfake adaptation
+    parser.add_argument('--implicit_deepfake', default=True, type=bool, help='Activation flag for our custom usage')
+    parser.add_argument('--dataset_path', default="dataset", type=str, help="Path to the target dataset")
+    parser.add_argument('--save_path', default="deepfake", type=str, help="Path to the directory to save results")
+    parser.add_argument('--train_size', default=100, type=int, help="Train set size in the target dataset")
+    parser.add_argument('--val_size', default=50, type=int, help="Validation set size in the target dataset")
+    parser.add_argument('--test_size', default=50, type=int, help="Test set size in the target dataset")
+    parser.add_argument('--celebrity', default='famous.jpg', type=str, help="Path to the celebrity source photo")
+
     args = parser.parse_args()
     main(args)
